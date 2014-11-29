@@ -1,0 +1,199 @@
+#!/usr/bin/python
+
+#
+# pftool - simple configuration management tool for small postfix intsallations
+# Copyright (C) 2014 Bozhin Zafirov <bozhin@deck17.com>
+#
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program; if not, write to the Free Software Foundation,
+#   Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+#
+
+import pwd
+import sys
+import os
+import string
+import subprocess
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+	'-c',
+	'--config-dir',
+	dest='postfix_conf',
+	default='/etc/postfix',
+	type=str,
+	help='Postfix configuration directory')
+parser.add_argument(
+	'-b',
+	'--virtual-mailbox-base',
+	dest='vmb_dir',
+	default='/home',
+	type=str,
+	help='Base directory for file storage')
+parser.add_argument(
+	'-d',
+	'--virtual-mailbox-domains',
+	dest='vmd_name',
+	default='virtual-mailbox-domains',
+	type=str,
+	help='Name of virtual mailbox domains database file')
+parser.add_argument(
+	'-m',
+	'--virtual-mailbox-maps',
+	dest='vmm_name',
+	default='virtual-mailbox-maps',
+	type=str,
+	help='Name of virtual mailbox maps database file')
+parser.add_argument(
+	'-U',
+	'--virtual-uid-maps',
+	dest='vum_name',
+	default='virtual-uid-maps',
+	type=str,
+	help='Name of virtual UID maps file')
+parser.add_argument(
+	'-G',
+	'--virtual-gid-maps',
+	dest='vgm_name',
+	default='virtual-gid-maps',
+	type=str,
+	help='Name of virtual GID maps file')
+
+parser.add_argument(
+	'-u',
+	'--update',
+	dest='update',
+	default=False,
+	action='store_true',
+	help='Update postfix databases')
+parser.add_argument(
+	'-v',
+	'--verify',
+	dest='verify',
+	default=False,
+	action='store_true',
+	help='Dry run - just tell what will be done')
+parser.add_argument(
+	'-q',
+	'--quiet',
+	dest='quiet',
+	default=False,
+	action='store_true',
+	help='Supress output messages')
+
+
+# verify system users - postfix users consistency
+def verify(args):
+	system_users = set(
+		map(
+			lambda x: x.pw_name,
+			filter(lambda x: '@' in x.pw_name, pwd.getpwall())
+			)
+		)
+	
+	# parse virtual-mailbox-maps file
+	with open(os.path.join(args.postfix_conf, args.vmm_name), 'r') as vmd_fh:
+		users = set(
+			map(
+				lambda x: x.split('\t', 1)[0],
+				filter(
+					lambda x: x and not x.startswith('#'),
+					map(string.strip, vmd_fh.readlines())
+					)
+				)
+			)
+		
+	# find inconsistencies between system users / postfix users
+	new_users = system_users - users
+	old_users = users - system_users
+
+	retcode = 0
+
+	if new_users:
+		if not args.quiet:
+			print ' Add new users:'
+			for user in new_users:
+				print '   {user}'.format(user=user)
+		retcode = 1
+
+	if old_users:
+		if not args.quiet:
+			print ' Remove old users'
+			for user in old_users:
+				print '   {user}'.format(user=user)
+		retcode = 1
+
+	return retcode
+
+
+# update postfix database files with new users
+def update(args):
+	vmd_name = os.path.join(args.postfix_conf, args.vmd_name)
+	vum_name = os.path.join(args.postfix_conf, args.vum_name)
+	vgm_name = os.path.join(args.postfix_conf, args.vgm_name)
+	vmm_name = os.path.join(args.postfix_conf, args.vmm_name)
+
+	# parse users and update databases
+	with open(vmd_name, 'w+') as vmd_fh, open(vum_name, 'w+') as vum_fh, open(vgm_name, 'w+') as vgm_fh, open(vmm_name, 'w+') as vmm_fh:
+		# print file headers
+		vmd_fh.write('# virtual-mailbox-domains\n')
+		vmm_fh.write('# virtual-mailbox-maps\n')
+		vum_fh.write('# virtual-uid-maps\n')
+		vgm_fh.write('# virtual-gid-maps\n')
+	
+		# full list of system users
+		users = filter(lambda x: '@' in x.pw_name, pwd.getpwall())
+	
+		# get list of virtual domains
+		vmd_set = set(map(lambda x: x.pw_name.split('@', 1)[1], users))
+
+		for domain in vmd_set:
+			if not args.quiet:
+				print ' DOMAIN {domain}'.format(domain=domain)
+			vmd_fh.write('{domain}\tDOMAIN\n'.format(domain=domain))
+			vmm_fh.write('\n# domain {domain}\n'.format(domain=domain))
+			vum_fh.write('\n# domain {domain}\n'.format(domain=domain))
+			vgm_fh.write('\n# domain {domain}\n'.format(domain=domain))
+			
+			for user in filter(lambda x: x.pw_name.endswith(domain), users):
+				if not user.pw_dir.startswith(args.vmb_dir):
+					print '   User {user}: incorrect home directory'.format(user=user.pw_name)
+					continue
+				if not args.quiet:
+					print '   User {user}'.format(user=user.pw_name)
+				pw_dir = user.pw_dir[len(args.vmb_dir)+1:]
+				vmm_fh.write('{mailbox}\t{directory}/\n'.format(mailbox=user.pw_name, directory=pw_dir))
+				vum_fh.write('{mailbox}\t{uid}\n'.format(mailbox=user.pw_name, uid=user.pw_uid))
+				vgm_fh.write('{mailbox}\t{gid}\n'.format(mailbox=user.pw_name, gid=user.pw_gid))
+				
+	# run postmap on all databases
+	subprocess.call([
+		'postmap',
+		vmd_name,
+		vmm_name,
+		vum_name,
+		vgm_name,
+		])
+
+	return 0
+
+# main program
+if __name__ == '__main__':
+	args = parser.parse_args()
+
+	if args.verify:
+		sys.exit(verify(args))
+
+	if args.update:
+		sys.exit(update(args))

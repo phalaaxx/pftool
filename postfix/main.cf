@@ -1,0 +1,101 @@
+# /etc/postfix/main.cf
+
+smtpd_banner = $myhostname ESMTP $mail_name (Debian GNU/Linux)
+biff = no
+
+# appending .domain is the MUA's job.
+append_dot_mydomain = no
+
+# Uncomment the next line to generate "delayed mail" warnings
+delay_warning_time = 4h
+
+readme_directory = no
+
+# TLS parameters
+smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+smtpd_tls_mandatory_protocols=!SSLv2, !SSLv3
+smtpd_use_tls=yes
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+
+# hostname
+# at the very minimum this value must be specified
+myhostname = mail.example.com
+# Debian specific:  Specifying a file name will cause the first
+# line of that file to be used as the name.  The Debian default
+# is /etc/mailname.
+myorigin = /etc/mailname
+
+# other settings
+mydestination =
+recipient_delimiter = +
+
+# message size limits
+message_size_limit = 52428800
+mailbox_size_limit = 268435456000
+virtual_mailbox_limit = 268435456000
+mailbox_size_limit = 0
+
+# interfaces and protocols settings
+inet_interfaces = all
+inet_protocols = ipv4
+mynetworks = 127.0.0.0/8 10.0.0.0/24 [::ffff:127.0.0.0]/104 [::1]/128
+relayhost = 
+
+# hash databases settings
+virtual_mailbox_base = /home
+virtual_mailbox_domains = 
+  hash:/etc/postfix/virtual-mailbox-domains,
+  hash:/etc/postfix/virtual-mailbox-domains-custom
+virtual_mailbox_maps =
+  hash:/etc/postfix/virtual-mailbox-maps,
+  hash:/etc/postfix/virtual-mailbox-maps-custom
+virtual_alias_maps =
+  hash:/etc/postfix/virtual-alias-maps
+virtual_uid_maps =
+  hash:/etc/postfix/virtual-uid-maps,
+  hash:/etc/postfix/virtual-uid-maps-custom
+virtual_gid_maps =
+  hash:/etc/postfix/virtual-gid-maps,
+  hash:/etc/postfix/virtual-gid-maps-custom
+
+## clamav
+#content_filter = scan:127.0.0.1:10025
+#receive_override_options = no_address_mappings
+
+## DKIM
+#milter_default_action = accept
+#milter_protocol = 2
+#smtpd_milters = inet:localhost:8891
+#non_smtpd_milters = inet:localhost:8891
+
+# These lines are required for smtp authentication to work
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes
+
+# spam filters
+smtpd_helo_required = yes
+smtpd_sender_restrictions =
+  permit_mynetworks,
+  permit_sasl_authenticated,
+  reject_unknown_sender_domain,
+  permit
+smtpd_recipient_restrictions =
+  permit_mynetworks,
+  permit_sasl_authenticated,
+  reject_non_fqdn_recipient,
+  reject_unauth_destination,
+  reject_unauth_pipelining,
+  reject_invalid_hostname,
+  reject_unknown_sender_domain,
+  reject_unknown_recipient_domain,
+  #check_policy_service unix:private/policy,
+  #check_policy_service inet:127.0.0.1:10023,
+  check_sender_access hash:/etc/postfix/sender-access,
+  reject_rbl_client sbl.spamhaus.org,
+  reject_rbl_client cbl.abuseat.org,
+  reject_rbl_client pbl.spamhaus.org,
+  reject_rbl_client bl.spamcop.net,
+  permit
