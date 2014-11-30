@@ -13,7 +13,7 @@ Install mandatory components:
 
 Install optional components. These are used for SPF and Postgrey policy checking:
 
-	apt-get install postgrey postfix-policyd-spf-python
+	apt-get install postgrey postfix-policyd-spf-python opendkim opendkim-tools
 
 Configure postfix and dovecot
 -----------------------------
