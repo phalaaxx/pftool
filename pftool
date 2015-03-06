@@ -19,14 +19,16 @@
 #   Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 #
 
-import pwd
-import sys
-import os
-import string
-import subprocess
-import argparse
+from pwd import getpwall
+from sys import exit
+from os import path
+from string import strip
+from subprocess import call
+from argparse import ArgumentParser
+from time import strftime
+from shutil import copy, move
 
-parser = argparse.ArgumentParser()
+parser = ArgumentParser()
 parser.add_argument(
 	'-c',
 	'--config-dir',
@@ -91,6 +93,12 @@ parser.add_argument(
 	default=False,
 	action='store_true',
 	help='Supress output messages')
+parser.add_argument(
+	'--setup',
+	dest='setup',
+	default=False,
+	action='store_true',
+	help='Do initial configuration')
 
 
 # verify system users - postfix users consistency
@@ -98,18 +106,18 @@ def verify(args):
 	system_users = set(
 		map(
 			lambda x: x.pw_name,
-			filter(lambda x: '@' in x.pw_name, pwd.getpwall())
+			filter(lambda x: '@' in x.pw_name, getpwall())
 			)
 		)
 	
 	# parse virtual-mailbox-maps file
-	with open(os.path.join(args.postfix_conf, args.vmm_name), 'r') as vmd_fh:
+	with open(path.join(args.postfix_conf, args.vmm_name), 'r') as vmd_fh:
 		users = set(
 			map(
 				lambda x: x.split('\t', 1)[0],
 				filter(
 					lambda x: x and not x.startswith('#'),
-					map(string.strip, vmd_fh.readlines())
+					map(strip, vmd_fh.readlines())
 					)
 				)
 			)
@@ -139,10 +147,10 @@ def verify(args):
 
 # update postfix database files with new users
 def update(args):
-	vmd_name = os.path.join(args.postfix_conf, args.vmd_name)
-	vum_name = os.path.join(args.postfix_conf, args.vum_name)
-	vgm_name = os.path.join(args.postfix_conf, args.vgm_name)
-	vmm_name = os.path.join(args.postfix_conf, args.vmm_name)
+	vmd_name = path.join(args.postfix_conf, args.vmd_name)
+	vum_name = path.join(args.postfix_conf, args.vum_name)
+	vgm_name = path.join(args.postfix_conf, args.vgm_name)
+	vmm_name = path.join(args.postfix_conf, args.vmm_name)
 
 	# parse users and update databases
 	with open(vmd_name, 'w+') as vmd_fh, open(vum_name, 'w+') as vum_fh, open(vgm_name, 'w+') as vgm_fh, open(vmm_name, 'w+') as vmm_fh:
@@ -153,7 +161,7 @@ def update(args):
 		vgm_fh.write('# virtual-gid-maps\n')
 	
 		# full list of system users
-		users = filter(lambda x: '@' in x.pw_name, pwd.getpwall())
+		users = filter(lambda x: '@' in x.pw_name, getpwall())
 	
 		# get list of virtual domains
 		vmd_set = set(map(lambda x: x.pw_name.split('@', 1)[1], users))
@@ -178,7 +186,7 @@ def update(args):
 				vgm_fh.write('{mailbox}\t{gid}\n'.format(mailbox=user.pw_name, gid=user.pw_gid))
 				
 	# run postmap on all databases
-	subprocess.call([
+	call([
 		'postmap',
 		vmd_name,
 		vmm_name,
@@ -188,12 +196,48 @@ def update(args):
 
 	return 0
 
+
+# initial pftool setup
+def setup(args):
+	ConfFiles = (
+		('postfix/main.cf', '/etc/postfix/main.cf'),
+		('dovecot/dovecot.conf', '/etc/dovecot/dovecot.conf'))
+
+	for src, dst in ConfFiles:
+		if path.exists(dst):
+			move(dst, strftime(dst+'.%Y%m%d%H%M%S'))
+		copy(src, dst)
+
+	PostfixMapFiles = [
+		'/etc/postfix/virtual-mailbox-maps-custom',
+		'/etc/postfix/virtual-mailbox-domains-custom',
+		'/etc/postfix/virtual-uid-maps-custom',
+		'/etc/postfix/virtual-gid-maps-custom',
+		'/etc/postfix/virtual-mailbox-maps',
+		'/etc/postfix/virtual-mailbox-domains',
+		'/etc/postfix/virtual-uid-maps',
+		'/etc/postfix/virtual-gid-maps',
+		'/etc/postfix/sender-access']
+
+	for PFMap in PostfixMapFiles:
+		if not path.exists(PFMap):
+			with open(PFMap, 'w') as fh:
+				fh.write('# %s\n' % filename)
+
+	call(['/usr/sbin/postmap'] + PostfixMapFiles)
+
+	return 0
+
+
 # main program
 if __name__ == '__main__':
 	args = parser.parse_args()
 
 	if args.verify:
-		sys.exit(verify(args))
+		exit(verify(args))
 
 	if args.update:
-		sys.exit(update(args))
+		exit(update(args))
+
+	if args.setup:
+		exit(setup(args))
