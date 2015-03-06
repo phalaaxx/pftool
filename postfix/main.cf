@@ -35,7 +35,6 @@ recipient_delimiter = +
 message_size_limit = 52428800
 mailbox_size_limit = 268435456000
 virtual_mailbox_limit = 268435456000
-mailbox_size_limit = 0
 
 # interfaces and protocols settings
 inet_interfaces = all
