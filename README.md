@@ -18,14 +18,9 @@ Install optional components. These are used for SPF and Postgrey policy checking
 Configure postfix and dovecot
 -----------------------------
 
-Copy dovecot/dovecot.conf to /etc/dovecot/dovecot.conf and postfix/main.cf to /etc/postfix/main.cf; Edit /etc/postfix/main.cf and make any necessary changes to it. At the very least make sure to edit the *myhostname* configuration parameter.
-Next create postfix database mappings::
+	pftool --setup
 
-	touch /etc/postfix/virtual-{mailbox-maps,mailbox-domains,uid-maps,gid-maps}-custom
-	postmap /etc/postfix/virtual-{mailbox-maps,mailbox-domains,uid-maps,gid-maps}-custom
-
-	touch /etc/postfix/sender-access
-	postmap /etc/postfix/sender-access
+Edit /etc/postfix/main.cf and make any necessary changes to it. At the very least make sure to edit the *myhostname* configuration parameter.
 
 Usage
 -----
